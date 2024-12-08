@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stock Prediction for {{ stock_symbol }}</title>
+</head>
+<body>
+    <h1>Stock Prediction for {{ stock_symbol }}</h1>
+    <p>Predicted Price: {{ prediction }}</p>
+    <img src="{{ url_for('static', filename=stock_symbol + '.png') }}" alt="Prediction Plot">
+</body>
+</html>
+

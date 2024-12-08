@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stock Prediction</title>
+</head>
+<body>
+    <h1>Stock Prediction</h1>
+    <form action="/predict" method="post">
+        <label for="stock_symbol">Enter Stock Symbol:</label>
+        <input type="text" id="stock_symbol" name="stock_symbol" required>
+        <button type="submit">Get Prediction</button>
+    </form>
+
+    <div id="predictions">
+        <!-- Predictions will be displayed here -->
+        {% for prediction in predictions %}
+           <div>
+               <h3>{{ prediction.symbol }}</h3>
+               <p>Predicted Price: {{ prediction.prediction }}</p>
+               <img src="{{ url_for('static', filename=prediction.symbol + '.png') }}" alt="Prediction for {{ prediction.symbol }}">
+          </div>
+     {% endfor %}
+
+    </div>
+</body>
+</html>
+
