@@ -3,18 +3,26 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stock Prediction for {{ symbol }}</title>
+    <title>Prediction Results</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 </head>
 <body>
-    <h1>Stock Prediction for {{ symbol }}</h1>
-    <h2>Latest Predicted Price: {{ latest_prediction }}</h2>
+    <div class="container mt-5">
+        <h1 class="text-center">Prediction Results for {{ symbol }}</h1>
+        <div class="mt-4">
+            <h3 class="text-center">Latest Predicted Price: <strong>{{ latest_prediction }}</strong></h3>
+        </div>
+        <div id="prediction-graph" class="mt-5"></div>
+        <a href="/" class="btn btn-secondary mt-4 w-100">Back to Home</a>
+    </div>
 
-    <div id="prediction-graph"></div>
     <script>
         const graphData = {{ graph_json|safe }};
         Plotly.newPlot('prediction-graph', graphData.data, graphData.layout);
     </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
 

@@ -12,8 +12,6 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
 import pyarrow as pa
 import pyarrow.parquet as pq
-import json
-from plotly.utils import PlotlyJSONEncoder
 
 # Initialize Flask App
 app = Flask(__name__)
@@ -101,6 +99,10 @@ def preprocess_data_spark(symbol):
     query = f"SELECT * FROM stock_prices WHERE symbol = '{symbol}'"
     df = pd.read_sql_query(query, engine)
 
+    # Generate and Union Synthetic Data
+    #synthetic_df = generate_synthetic_data(df)
+    #df = pd.concat([df, synthetic_df], ignore_index=True)
+
     # Convert to Spark DataFrame
     spark_df = spark.createDataFrame(df)
 
@@ -148,63 +150,156 @@ def train_lstm_model(df):
     x_train, y_train = create_sequences(train_data, seq_length)
     x_test, y_test = create_sequences(test_data, seq_length)
 
-    # Model Definition
+    # Build LSTM Model
     model = Sequential([
-        LSTM(50, activation='relu', return_sequences=True, input_shape=(seq_length, 1)),
-        LSTM(50, activation='relu', return_sequences=False),
+        LSTM(50, return_sequences=True, input_shape=(x_train.shape[1], 1)),
+        LSTM(50),
         Dense(1)
     ])
+    model.compile(optimizer="adam", loss="mean_squared_error")
+    model.fit(x_train, y_train, epochs=10, batch_size=32, verbose=1)
 
-    model.compile(optimizer='adam', loss='mse')
+    print("LSTM model training completed.")
+    return model, scaler, x_test, y_test
 
-    # Training
-    model.fit(x_train, y_train, epochs=20, batch_size=32, verbose=1)
-
-    # Predict
+# Predict Stock Price
+def predict_stock_price(symbol):
+    print(f"Predicting stock price for {symbol}")
+    df = preprocess_data_spark(symbol)
+    model, scaler, x_test, y_test = train_lstm_model(df)
     predictions = model.predict(x_test)
-
-    # Scale back to original data
     predictions = scaler.inverse_transform(predictions)
-    y_test_actual = scaler.inverse_transform(y_test)
+    actual = scaler.inverse_transform(y_test.reshape(-1, 1))
+    print("Stock price prediction completed.")
+    return predictions, actual
 
-    print("Model training completed.")
-    return model, predictions, y_test_actual
-
-# Save Model
 def save_model(model, symbol):
-    model.save(f"./models/{symbol}_model.h5")
-    print(f"Model saved for {symbol}")
+    model_dir = "models"
+    os.makedirs(model_dir, exist_ok=True)
+    model_path = os.path.join(model_dir, f"{symbol}_lstm_model.h5")
+    model.save(model_path)
+    print(f"Model saved at {model_path}")
+    return model_path
+    
+@app.route("/train/<symbol>", methods=["POST"])
+def train(symbol):
+    print(f"Training model for {symbol}")
+    predictions, actual = predict_stock_price(symbol)
+    print(f"Predicted prices for {symbol}: {predictions[-5:].flatten().tolist()}")
 
-# Route for Handling Predictions
-@app.route("/predict/<symbol>", methods=["GET"])
+    latest_prediction = predictions[-1][0]  # Extract the latest predicted price
+    print(f"Latest predicted price for {symbol}: {latest_prediction}")
+
+    # Prepare data for graphing
+    dates = pd.date_range(start="2023-04-20", periods=len(predictions), freq="D")
+    predictions_series = pd.DataFrame({"date": dates, "predicted": predictions.flatten()})
+    actual_series = pd.DataFrame({"date": dates, "actual": actual.flatten()})
+
+    # Generate graph JSON
+    graph_json = create_prediction_graph(predictions_series.to_dict(orient="records"),   actual_series.to_dict(orient="records"))
+
+    return render_template(
+        "train.html",
+        symbol=symbol,
+        latest_prediction=latest_prediction,
+        graph_json=graph_json,
+    )
+
+
+import plotly.graph_objs as go
+from plotly.utils import PlotlyJSONEncoder
+import json
+
+@app.route("/predict/<symbol>", methods=['POST'])
 def predict(symbol):
+    print(f"Predicting stock price for {symbol}")
     try:
-        # Preprocess the data
-        df = preprocess_data_spark(symbol)
+        predictions, actual = predict_stock_price(symbol)
+        latest_prediction = predictions[-1][0]  # Get the latest predicted price
+        print(f"Latest predicted price for {symbol}: {latest_prediction}")
+        
+        # Prepare data for graphing
+        dates = pd.date_range(start="2023-04-20", periods=len(predictions), freq="D")
+        predictions_series = pd.DataFrame({"date": dates, "predicted": predictions.flatten()})
+        actual_series = pd.DataFrame({"date": dates, "actual": actual.flatten()})
 
-        # Train model
-        model, predictions, y_test_actual = train_lstm_model(df)
+        # Generate graph JSON
+        graph_json = create_prediction_graph(predictions_series.to_dict(orient="records"),              actual_series.to_dict(orient="records"))
 
-        # Save model
-        save_model(model, symbol)
-
+        return render_template(
+            "predict.html",
+            symbol=symbol,
+            latest_prediction=latest_prediction,
+            graph_json=graph_json,
+    )
         return jsonify({
-            "message": f"Model saved at ./models/{symbol}_model.h5",
-            "predictions": predictions.tolist(),
-            "actual": y_test_actual.tolist()
+            "message": "Prediction successful",
+            "latest_prediction": latest_prediction
         })
-
     except Exception as e:
+        print(f"Error during prediction: {e}")
         return jsonify({"error": str(e)})
 
-# Route for Home Page
+
+def create_prediction_graph(predictions, actual):
+    # Create traces
+    trace1 = go.Scatter(
+        x=[item["date"] for item in predictions],
+        y=[item["predicted"] for item in predictions],
+        mode="lines",
+        name="Predicted"
+    )
+    trace2 = go.Scatter(
+        x=[item["date"] for item in actual],
+        y=[item["actual"] for item in actual],
+        mode="lines",
+        name="Actual"
+    )
+
+    layout = go.Layout(
+        title="Stock Price Predictions",
+        xaxis={"title": "Date"},
+        yaxis={"title": "Price"},
+    )
+
+    fig = go.Figure(data=[trace1, trace2], layout=layout)
+    return json.dumps(fig, cls=PlotlyJSONEncoder)
+
+'''
+@app.route("/train/<symbol>", methods=["GET"])
+def train(symbol):
+    print(f"Training model for {symbol}")
+    try:
+        predictions, actual = predict_stock_price(symbol)
+        model_path = save_model(model, symbol)  # Save the trained model
+        print(f"Predicted prices for {symbol}: {predictions[-5:].flatten().tolist()}")
+        return jsonify({
+            "message": f"Model trained and saved at {model_path}",
+            "predictions": predictions.tolist(),
+            "actual": actual.tolist()
+        })
+    except Exception as e:
+        print(f"Error during training: {e}")
+        return jsonify({"error": str(e)})
+  '''      
+from flask import send_file
+
+@app.route("/download/<symbol>", methods=["GET"])
+def download_model(symbol):
+    model_path = f"models/{symbol}_lstm_model.h5"
+    if os.path.exists(model_path):
+        return send_file(model_path, as_attachment=True)
+    else:
+        return jsonify({"error": "Model not found"}), 404
+        
+
 @app.route("/")
-def home():
+def index():
     return render_template("index.html")
 
-# Start the Flask App
 if __name__ == "__main__":
-    setup_database()  # Initial setup for the database
-    fetch_historical_data(['AAPL', 'MSFT', 'GOOGL'])  # Fetch historical data for these stocks
+    setup_database()
+    STOCK_SYMBOLS = ["INFY.NS", "TCS.NS", "RELIANCE.NS"]
+    fetch_historical_data(STOCK_SYMBOLS)
+    print("All historical data fetched and saved.")
     app.run(debug=True)
-
