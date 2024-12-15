@@ -1,27 +1,51 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Stock Prediction</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Market Predictor</title>
+    <link rel="stylesheet" href="static/style.css">
 </head>
 <body>
-    <h1>Stock Prediction</h1>
-    <form action="/predict" method="post">
-        <label for="stock_symbol">Enter Stock Symbol:</label>
-        <input type="text" id="stock_symbol" name="stock_symbol" required>
-        <button type="submit">Get Prediction</button>
-    </form>
-
-    <div id="predictions">
-        <!-- Predictions will be displayed here -->
-        {% for prediction in predictions %}
-           <div>
-               <h3>{{ prediction.symbol }}</h3>
-               <p>Predicted Price: {{ prediction.prediction }}</p>
-               <img src="{{ url_for('static', filename=prediction.symbol + '.png') }}" alt="Prediction for {{ prediction.symbol }}">
-          </div>
-     {% endfor %}
-
+    <div class="container">
+        <h1>Stock Market Predictor</h1>
+        <form id="predictionForm">
+            <label for="symbol">Enter Stock Symbol:</label>
+            <input type="text" id="symbol" placeholder="e.g., INFY.NS">
+            <button type="submit" id="predictButton">Predict</button>
+        </form>
+        <div id="results"></div>
     </div>
+
+    <script>
+        document.getElementById("predictionForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const symbol = document.getElementById("symbol").value.trim();
+            const resultsDiv = document.getElementById("results");
+            resultsDiv.innerHTML = "Loading...";
+
+            if (!symbol) {
+                resultsDiv.innerHTML = '<p style="color:red;">Please enter a valid stock symbol.</p>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/predict/${symbol}`);
+                const data = await response.json();
+                if (data.error) {
+                    resultsDiv.innerHTML = `<p style="color:red;">Error: ${data.error}</p>`;
+                } else {
+                    resultsDiv.innerHTML = `
+                        
+                        <p><strong>Last 5 Predictions:</strong> ${data.predictions.slice(-1)}</p>
+                        <p><strong>Actual:</strong> ${data.actual.slice(-1)}</p>
+                    `;
+                }
+            } catch (err) {
+                resultsDiv.innerHTML = `<p style="color:red;">An error occurred: ${err.message}</p>`;
+            }
+        });
+    </script>
 </body>
 </html>
 
